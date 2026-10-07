@@ -1,0 +1,26 @@
+[
+  {
+    "allowedMemberTypes": ["User"],
+    "description": "Planners wijzen ritten toe binnen hun regio.",
+    "displayName": "Planner",
+    "isEnabled": true,
+    "id": "5f6c1d0a-0f6a-4e0e-9b1a-1a0b0c0d0e01",
+    "value": "Planner"
+  },
+  {
+    "allowedMemberTypes": ["User"],
+    "description": "Chauffeurs zien eigen ritten en bevestigen leveringen.",
+    "displayName": "Chauffeur",
+    "isEnabled": true,
+    "id": "5f6c1d0a-0f6a-4e0e-9b1a-1a0b0c0d0e02",
+    "value": "Chauffeur"
+  },
+  {
+    "allowedMemberTypes": ["User"],
+    "description": "IT-beheerders: volledige configuratie, auditlog en technisch beheer.",
+    "displayName": "IT-beheerder",
+    "isEnabled": true,
+    "id": "5f6c1d0a-0f6a-4e0e-9b1a-1a0b0c0d0e03",
+    "value": "ITBeheerder"
+  }
+]
