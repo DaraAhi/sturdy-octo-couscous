@@ -1,0 +1,83 @@
+name: build-test-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # nodig voor inloggen bij Azure via OIDC (geen opgeslagen wachtwoorden)
+  contents: read
+
+env:
+  # Stel in onder Settings > Secrets and variables > Actions
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+  APP_NAME: ${{ vars.APP_NAME }}
+  IMAGE: ${{ vars.ACR_NAME }}.azurecr.io/ritplanning:${{ github.sha }}
+
+jobs:
+  ci:
+    # Draait altijd, zonder Azure: tests, build, scan, container-smoketest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # 1. Unit tests (RBAC, bewaartermijn, audit) - falen blokkeert alles hierna
+      - name: Unit tests
+        run: dotnet run --project tests/Ritplanning.Tests -c Release
+
+      # 2. Image bouwen
+      - name: Docker build
+        run: docker build -t ritplanning:${{ github.sha }} .
+
+      # 3. Kwetsbaarhedenscan - blokkeert bij CRITICAL/HIGH met beschikbare fix (NIST SP 800-190)
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ritplanning:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # 4. Integratietest: start de container en doorloop de smoke-test
+      - name: Container integratietest
+        run: |
+          docker run -d --name test -p 8080:8080 ritplanning:${{ github.sha }}
+          for i in $(seq 1 20); do curl -sf http://localhost:8080/health && break || sleep 2; done
+          ./scripts/smoke-test.sh http://localhost:8080
+          docker logs test | tail -20
+          docker rm -f test
+
+  deploy:
+    # Alleen als Azure is ingericht (repository-variabele ACR_NAME is gezet)
+    needs: ci
+    if: ${{ vars.ACR_NAME != '' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker build
+        run: docker build -t ritplanning:${{ github.sha }} .
+      # 5. Publiceren naar Azure Container Registry
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Push naar ACR
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker tag ritplanning:${{ github.sha }} "$IMAGE"
+          docker push "$IMAGE"
+
+      # 6-8. Nieuwe revisie, health check, verkeer schakelen of automatisch terugvallen
+      - name: Deploy met automatische rollback
+        env:
+          APP: ${{ env.APP_NAME }}
+          RG: ${{ env.RESOURCE_GROUP }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/deploy.sh
