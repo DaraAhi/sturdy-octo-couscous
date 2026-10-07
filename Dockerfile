@@ -10,6 +10,9 @@ RUN dotnet publish src/Ritplanning.Web/Ritplanning.Web.csproj -c Release -o /app
 # --- Runtime stage (kleine image, niet-root gebruiker) ---
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
+# Beveiligingsupdates van de basis-image (Trivy vond kwetsbaarheden in perl-base)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
 ENV ASPNETCORE_HTTP_PORTS=8080
 # $APP_UID is de ingebouwde niet-geprivilegieerde gebruiker in de .NET 8 images
